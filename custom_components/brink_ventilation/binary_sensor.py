@@ -6,7 +6,7 @@ from homeassistant.components.binary_sensor import BinarySensorEntity, BinarySen
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from custom_components.brink_ventilation import BrinkHomeDeviceEntity
+from .device import BrinkHomeDeviceEntity
 
 from .const import (
     DATA_CLIENT,
