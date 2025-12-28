@@ -12,7 +12,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.util.percentage import int_states_in_range, ranged_value_to_percentage, percentage_to_ranged_value
 
-from custom_components.brink_ventilation import BrinkHomeDeviceEntity
+from .device import BrinkHomeDeviceEntity
 
 from .const import (
     DATA_CLIENT,
