@@ -30,7 +30,7 @@ SENSOR_TYPES = {
         "state_class": SensorStateClass.MEASUREMENT,
         "unit": CONCENTRATION_PARTS_PER_MILLION,
         "icon": "mdi:molecule-co2",
-        "pattern": r"(?=.*\bPPM\b)(?=.*\bCO2\b)",
+        "pattern": r"co2",
     },
 }
 
