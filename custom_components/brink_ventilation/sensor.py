@@ -69,10 +69,10 @@ async def async_setup_entry(
             )
 
             for sensor_type, props in SENSOR_TYPES.items():
-                pattern = re.compile(props["pattern"], re.IGNORECASE)
+                regex = re.compile(props["pattern"], re.IGNORECASE)
 
                 # 1) match op key (bijv. 'co2_sensor_2')
-                if pattern.search(str(key)):
+                if regex.search(str(key)):
                     _LOGGER.warning(
                         "Matched %s sensor by KEY on device %s: key=%s name=%s",
                         sensor_type,
@@ -96,7 +96,7 @@ async def async_setup_entry(
                     continue
 
                 # 2) match op naam (bijv. 'PPM eBus CO2-sensor 2')
-                if pattern.search(sensor_name):
+                if regex.search(sensor_name):
                     _LOGGER.warning(
                         "Matched %s sensor by NAME on device %s: key=%s name=%s",
                         sensor_type,
