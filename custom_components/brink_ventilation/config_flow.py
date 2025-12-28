@@ -1,24 +1,27 @@
 """Adds config flow for Brink-home."""
-import logging
+from __future__ import annotations
+
 import asyncio
-import aiohttp
-import voluptuous as vol
+import logging
 from http import HTTPStatus
 
-from homeassistant import config_entries, core, exceptions
-from homeassistant.core import callback
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, CONF_SCAN_INTERVAL
+import aiohttp
+import voluptuous as vol
 
-from .core.brink_home_cloud import BrinkHomeCloud
+from homeassistant import config_entries, exceptions
+from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, CONF_SCAN_INTERVAL
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
 from .const import DOMAIN, DEFAULT_SCAN_INTERVAL
+from .core.brink_home_cloud import BrinkHomeCloud
 
 _LOGGER = logging.getLogger(__name__)
 
 DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_USERNAME): str,
-        vol.Required(CONF_PASSWORD): str
+        vol.Required(CONF_PASSWORD): str,
     }
 )
 
@@ -28,41 +31,52 @@ class BrinkHomeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Start the Brink-home config flow."""
-        self._reauth_entry = None
-        self._username = None
+        self._reauth_entry: config_entries.ConfigEntry | None = None
+        self._username: str | None = None
+        self._password: str | None = None
 
     async def async_step_user(self, user_input=None):
         """Handle the initial step."""
-        errors = {}
+        errors: dict[str, str] = {}
 
         if user_input is not None:
             self._username = user_input[CONF_USERNAME]
             self._password = user_input[CONF_PASSWORD]
-            unique_id = user_input[CONF_USERNAME].lower()
+            unique_id = self._username.lower()
+
             await self.async_set_unique_id(unique_id)
+            self._abort_if_unique_id_configured()
 
             session = async_get_clientsession(self.hass)
             brink_client = BrinkHomeCloud(session, self._username, self._password)
 
             try:
                 await brink_client.login()
-            except (asyncio.TimeoutError, aiohttp.ClientError) as err:
+            except asyncio.TimeoutError:
+                errors["base"] = "cannot_connect"
+            except aiohttp.ClientResponseError as err:
                 if err.status == HTTPStatus.UNAUTHORIZED:
                     errors["base"] = "invalid_auth"
                 else:
                     errors["base"] = "cannot_connect"
-            except Exception:
+            except aiohttp.ClientError:
+                errors["base"] = "cannot_connect"
+            except Exception:  # noqa: BLE001
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
             else:
                 if not self._reauth_entry:
                     return self.async_create_entry(
-                        title=user_input[CONF_USERNAME], data=user_input
+                        title=self._username,
+                        data=user_input,
                     )
+
                 self.hass.config_entries.async_update_entry(
-                    self._reauth_entry, data=user_input, unique_id=unique_id
+                    self._reauth_entry,
+                    data=user_input,
+                    unique_id=unique_id,
                 )
                 # Reload the config entry otherwise devices will remain unavailable
                 self.hass.async_create_task(
@@ -71,18 +85,20 @@ class BrinkHomeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self.async_abort(reason="reauth_successful")
 
         return self.async_show_form(
-            step_id="user", data_schema=DATA_SCHEMA, errors=errors
+            step_id="user",
+            data_schema=DATA_SCHEMA,
+            errors=errors,
         )
 
     @staticmethod
     @callback
-    def async_get_options_flow(config_entry):
+    def async_get_options_flow(config_entry: config_entries.ConfigEntry):
         """Get the options flow for this handler."""
         return OptionsFlowHandler(config_entry)
 
 
 class OptionsFlowHandler(config_entries.OptionsFlow):
-    """Handle a option flow for Brink-home."""
+    """Handle an option flow for Brink-home."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
@@ -91,7 +107,10 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
         """Handle options flow."""
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            return self.async_create_entry(
+                title="",
+                data=user_input,
+            )
 
         return self.async_show_form(
             step_id="init",
@@ -99,8 +118,11 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 {
                     vol.Required(
                         CONF_SCAN_INTERVAL,
-                        default=self.config_entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+                        default=self.config_entry.options.get(
+                            CONF_SCAN_INTERVAL,
+                            DEFAULT_SCAN_INTERVAL,
+                        ),
                     ): int,
                 }
-            )
+            ),
         )
