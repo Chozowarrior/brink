@@ -13,7 +13,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONCENTRATION_PARTS_PER_MILLION
 from homeassistant.core import HomeAssistant
 
-from custom_components.brink_ventilation import BrinkHomeDeviceEntity
+from .device import BrinkHomeDeviceEntity
 
 from .const import (
     DATA_CLIENT,
