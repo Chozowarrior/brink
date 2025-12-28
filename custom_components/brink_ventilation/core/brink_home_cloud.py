@@ -1,4 +1,6 @@
 """Implementation for Brink-Home Cloud"""
+from __future__ import annotations
+
 import asyncio
 import logging
 import re
@@ -28,14 +30,10 @@ class BrinkHomeCloud:
         self._http_session = session
         self._username = username
         self._password = password
+        self.token_exists = False
 
     async def _api_call(self, url, method, data=None):
-        _LOGGER.debug(
-            "%s request: %s, data %s",
-            method,
-            url,
-            data,
-        )
+        _LOGGER.debug("%s request: %s, data %s", method, url, data)
         try:
             async with async_timeout.timeout(self.timeout):
                 req = await self._http_session.request(
@@ -63,8 +61,8 @@ class BrinkHomeCloud:
 
     async def login(self):
         data = {
-            'UserName': self._username,
-            'Password': self._password,
+            "UserName": self._username,
+            "Password": self._password,
         }
 
         url = f"{API_URL}UserLogon"
@@ -73,10 +71,7 @@ class BrinkHomeCloud:
         result = await resp.json()
         self.token_exists = True
 
-        _LOGGER.debug(
-            "login result: %s",
-            result,
-        )
+        _LOGGER.debug("login result: %s", result)
 
         return result
 
@@ -92,31 +87,27 @@ class BrinkHomeCloud:
         for system in result:
             mapped_result.append(
                 {
-                    'system_id': system["id"],
-                    'gateway_id': system["gatewayId"],
-                    'name': system['name']
-                },
+                    "system_id": system["id"],
+                    "gateway_id": system["gatewayId"],
+                    "name": system["name"],
+                }
             )
 
-        _LOGGER.debug(
-            "get_systems result: %s",
-            mapped_result,
-        )
+        _LOGGER.debug("get_systems result: %s", mapped_result)
 
         return mapped_result
 
     async def get_description_values(self, system_id, gateway_id):
         """Gets values info."""
-        url = (f"{API_URL}GetAppGuiDescriptionForGateway?GatewayId="
-               f"{gateway_id}&SystemId={system_id}")
+        url = (
+            f"{API_URL}GetAppGuiDescriptionForGateway?GatewayId="
+            f"{gateway_id}&SystemId={system_id}"
+        )
 
         response = await self._api_call(url, "GET")
         result = await response.json()
 
-        _LOGGER.debug(
-            "Response result: %s",
-            result,
-        )
+        _LOGGER.debug("Response result: %s", result)
 
         menu_items = result.get("menuItems", [])
         if not menu_items:
@@ -135,49 +126,54 @@ class BrinkHomeCloud:
             parameters = page.get("parameterDescriptors", [])
             all_parameters.extend(parameters)
 
-        _LOGGER.debug(f"Found {len(all_parameters)} parameters across all pages")
+        _LOGGER.debug("Found %s parameters across all pages", len(all_parameters))
 
         # Find the basic parameters
         ventilation = self.__find(all_parameters, "uiId", "Lüftungsstufe")
         mode = self.__find(all_parameters, "uiId", "Betriebsart")
         filters_need_change = self.__find(
-            all_parameters, "uiId", "Status Filtermeldung",
+            all_parameters,
+            "uiId",
+            "Status Filtermeldung",
         )
 
         # Initialize the result dictionary with the basic parameters
         description_result = {
             "ventilation": self.__get_type(ventilation),
             "mode": self.__get_type(mode),
-            "filters_need_change": self.__get_type(filters_need_change)
+            "filters_need_change": self.__get_type(filters_need_change),
         }
+
+        # Regex voor CO2, op basis van SENSOR_TYPES-definitie
+        co2_def = SENSOR_TYPES.get("co2")
+        co2_pattern = None
+        if co2_def and "pattern" in co2_def:
+            co2_pattern = re.compile(co2_def["pattern"], re.IGNORECASE)
 
         # Look for CO2 sensors and other sensors and add them to the result
         for param in all_parameters:
             param_name = param.get("name", "")
 
             # Add CO2 sensors
-            if re.search(SENSOR_TYPES.get("co2").pattern, param_name):
-                _LOGGER.debug(f"Found CO2 sensor: {param_name}")
+            if co2_pattern and co2_pattern.search(param_name):
+                _LOGGER.debug("Found CO2 sensor: %s", param_name)
                 description_result[param_name] = self.__get_type(param)
 
-        _LOGGER.debug(
-            "get_description_values result: %s",
-            description_result,
-        )
+        _LOGGER.debug("get_description_values result: %s", description_result)
 
         return description_result
 
-    def __get_type(self, type):
+    def __get_type(self, type_dict):
         return {
-            "name": TRANSLATIONS.get(type["name"], type["name"]),
-            "value_id": type["valueId"],
-            "value": type["value"],
-            "values": self.__get_values(type)
+            "name": TRANSLATIONS.get(type_dict["name"], type_dict["name"]),
+            "value_id": type_dict["valueId"],
+            "value": type_dict["value"],
+            "values": self.__get_values(type_dict),
         }
 
     @staticmethod
-    def __get_values(type):
-        values = type["listItems"]
+    def __get_values(type_dict):
+        values = type_dict["listItems"]
         extracted = []
         for value in values:
             if value["isSelectable"]:
@@ -185,35 +181,41 @@ class BrinkHomeCloud:
                     {
                         "value": value["value"],
                         "text": TRANSLATIONS.get(
-                            value["displayText"], value["displayText"],
-                        )
-                    },
+                            value["displayText"],
+                            value["displayText"],
+                        ),
+                    }
                 )
 
         return extracted
 
     # 1 as mode value changes mode to manual every time you change ventilation value
     async def set_ventilation_value(
-        self, system_id, gateway_id, mode, ventilation, value,
+        self,
+        system_id,
+        gateway_id,
+        mode,
+        ventilation,
+        value,
     ):
         ventilation_value = ventilation["values"][value]["value"]
         if ventilation_value is None:
             return
         data = {
-            'GatewayId': gateway_id,
-            'SystemId': system_id,
-            'WriteParameterValues': [
+            "GatewayId": gateway_id,
+            "SystemId": system_id,
+            "WriteParameterValues": [
                 {
-                    'ValueId': mode["value_id"],
-                    'Value': '1',
+                    "ValueId": mode["value_id"],
+                    "Value": "1",
                 },
                 {
-                    'ValueId': ventilation["value_id"],
-                    'Value': ventilation_value,
-                }
+                    "ValueId": ventilation["value_id"],
+                    "Value": ventilation_value,
+                },
             ],
-            'SendInOneBundle': True,
-            'DependendReadValuesAfterWrite': []
+            "SendInOneBundle": True,
+            "DependendReadValuesAfterWrite": [],
         }
 
         url = f"{API_URL}WriteParameterValuesAsync"
@@ -225,16 +227,16 @@ class BrinkHomeCloud:
         if mode_value is None:
             return
         data = {
-            'GatewayId': gateway_id,
-            'SystemId': system_id,
-            'WriteParameterValues': [
+            "GatewayId": gateway_id,
+            "SystemId": system_id,
+            "WriteParameterValues": [
                 {
-                    'ValueId': mode["value_id"],
-                    'Value': mode_value,
+                    "ValueId": mode["value_id"],
+                    "Value": mode_value,
                 },
             ],
-            'SendInOneBundle': True,
-            'DependendReadValuesAfterWrite': []
+            "SendInOneBundle": True,
+            "DependendReadValuesAfterWrite": [],
         }
 
         url = f"{API_URL}WriteParameterValuesAsync"
@@ -246,8 +248,5 @@ class BrinkHomeCloud:
             try:
                 if obj[attr] == value:
                     return obj
-            except:
-                _LOGGER.debug(
-                    "find error: %s",
-                    value,
-                )
+            except Exception:  # noqa: BLE001
+                _LOGGER.debug("find error for value: %s", value)
